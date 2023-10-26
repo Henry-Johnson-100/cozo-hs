@@ -3,11 +3,24 @@
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
-import Control.Monad
-import Data.ByteString
-import Foreign
-import Foreign.C
-import MyLib
+import Data.ByteString (
+  packCString,
+  putStr,
+  useAsCString,
+ )
+import Database.Cozo (
+  cozoCloseDB,
+  cozoFreeStr,
+  cozoOpenDB,
+  cozoRunQuery,
+ )
+import Foreign (
+  Storable (peek),
+  fromBool,
+  maybePeek,
+  new,
+ )
+import Foreign.C (CInt)
 
 main :: IO ()
 main = do
