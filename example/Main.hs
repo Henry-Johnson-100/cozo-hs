@@ -5,7 +5,7 @@
 import Control.Exception (bracket, throwIO)
 import Control.Monad (void)
 import Data.ByteString (putStr)
-import Database.Cozo ( close', open', query' )
+import Database.Cozo ( close', open', runQuery' )
 
 main :: IO ()
 main =
@@ -17,7 +17,7 @@ main =
     )
     (void . close')
     $ \conn -> do
-      query' conn "?[] <- [[1,2,3],['a','b','c']]" "{}" False
+      runQuery' conn "?[] <- [[1,2,3],['a','b','c']]" "{}" False
         >>= either
           throwIO
           ( Data.ByteString.putStr

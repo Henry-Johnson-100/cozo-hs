@@ -17,5 +17,5 @@ main =
  where
   go conn = do
     x <- getLine
-    query' conn (fromString x) "{}" False >>= either print (B.putStr . (<> "\n"))
+    runQuery' conn (fromString x) "{}" False >>= either print (B.putStr . (<> "\n"))
     go conn

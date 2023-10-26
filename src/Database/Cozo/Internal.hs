@@ -3,7 +3,12 @@
 module Database.Cozo.Internal (
   open',
   close',
-  query',
+  runQuery',
+  importRelations',
+  exportRelations',
+  backup',
+  restore',
+  importFromBackup',
   Connection,
   InternalCozoError (..),
 ) where
@@ -13,9 +18,26 @@ import Control.Monad ((<=<))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Coerce (coerce)
-import Database.Cozo.Internal.Bindings
-import Foreign
-import Foreign.C.Types
+import Database.Cozo.Internal.Bindings (
+  cozoBackup,
+  cozoCloseDB,
+  cozoExportRelations,
+  cozoFreeStr,
+  cozoImportFromBackup,
+  cozoImportRelations,
+  cozoOpenDB,
+  cozoRestore,
+  cozoRunQuery,
+ )
+import Foreign (
+  Ptr,
+  Storable (peek),
+  fromBool,
+  maybePeek,
+  new,
+  toBool,
+ )
+import Foreign.C.Types (CChar, CInt)
 import GHC.Generics (Generic)
 
 newtype Connection = Connection (Ptr CInt)
@@ -77,20 +99,85 @@ mean the query was successful.
 - params_raw: a utf8 encoded, JSON formatted map of parameters for use in the script.
 - b: some boolean that the API is not clear about, set to False.
 -}
-query' ::
+runQuery' ::
   Connection ->
   ByteString ->
   ByteString ->
   Bool ->
   IO (Either InternalCozoError ByteString)
-query' (Connection conPtr) q p b =
+runQuery' c q p b =
   B.useAsCString q $ \q' ->
-    B.useAsCString p $ \p' -> do
-      dbId <- peek conPtr
-      queryResultsPtr <- cozoRunQuery dbId q' p' (fromBool b)
-      !mQueryResults <- maybePeek B.packCString queryResultsPtr
-      case mQueryResults of
-        Nothing -> pure . Left $ CozoNullResultPtr
-        Just queryResults -> do
-          cozoFreeStr queryResultsPtr
-          pure . Right $ queryResults
+    B.useAsCString p $ \p' ->
+      cozoCharPtrFn (\i -> cozoRunQuery i q' p' (fromBool b)) c
+
+{- |
+Import data in relations.
+
+Triggers are not run for relations, if you wish to activate triggers, use a query
+  with parameters.
+
+The given bytestring is a utf8, JSON formatted payload of relations.
+In the same form as that given by `exportRelations'`
+-}
+importRelations' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+importRelations' c payloadBs =
+  B.useAsCString payloadBs $ \payload ->
+    cozoCharPtrFn (`cozoImportRelations` payload) c
+
+{- |
+Export relations into JSON
+
+The given bytestring must be a utf8 encoded JSON payload. See the manual for expected
+fields.
+-}
+exportRelations' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+exportRelations' c payloadBs =
+  B.useAsCString payloadBs $ \payload ->
+    cozoCharPtrFn (`cozoExportRelations` payload) c
+
+{- |
+Backup a database.
+
+Accepts the path of the output file.
+-}
+backup' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+backup' c pathBs =
+  B.useAsCString pathBs $ \path ->
+    cozoCharPtrFn (`cozoBackup` path) c
+
+{- |
+Restore a database from a backup.
+-}
+restore' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+restore' c pathBs =
+  B.useAsCString pathBs $ \path ->
+    cozoCharPtrFn (`cozoRestore` path) c
+
+{- |
+Import relations from a backup.
+
+Note that triggers are not run for the relations.
+To run triggers, use a query with parameters.
+
+- payload: @"{'path': ..., 'relations': [...]}"@
+-}
+importFromBackup' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+importFromBackup' c payloadBs =
+  B.useAsCString payloadBs $ \payload ->
+    cozoCharPtrFn (`cozoImportFromBackup` payload) c
+
+{- |
+Helper function for using cozo bindings that do an action and return a
+string that needs to be freed.
+-}
+cozoCharPtrFn ::
+  (CInt -> IO (Ptr CChar)) ->
+  Connection ->
+  IO (Either InternalCozoError ByteString)
+cozoCharPtrFn a (Connection intPtr) = do
+  dbId <- peek intPtr
+  rPtr <- a dbId
+  !mR <- maybePeek B.packCString rPtr
+  case mR of
+    Nothing -> pure . Left $ CozoNullResultPtr
+    Just r -> Right r <$ cozoFreeStr rPtr
