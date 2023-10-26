@@ -16,6 +16,16 @@ extra-source-files: headers/cozo_c.h
 common warnings
     ghc-options: -Wall
 
+executable hello
+    import: warnings
+    build-depends:
+        base ^>= 4.18.0.0
+        ,cozo-hs
+        ,bytestring
+    hs-source-dirs: hello
+    main-is: main.hs
+    default-language: GHC2021
+
 library
     import:           warnings
     exposed-modules:  MyLib

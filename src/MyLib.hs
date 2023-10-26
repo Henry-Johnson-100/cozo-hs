@@ -17,7 +17,7 @@ import Foreign.C.Types
 import Foreign.Ptr
 
 foreign import capi "cozo_c.h cozo_open_db"
-  cozoOpenDB :: Ptr CChar -> Ptr CChar -> Ptr CChar -> Ptr CInt -> IO ()
+  cozoOpenDB :: Ptr CChar -> Ptr CChar -> Ptr CChar -> Ptr CInt -> IO (Ptr CChar)
 
 foreign import capi "cozo_c.h cozo_close_db"
   cozoCloseDB :: CInt -> IO CBool
