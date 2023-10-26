@@ -16,6 +16,21 @@ extra-source-files: headers/cozo_c.h
 common warnings
     ghc-options: -Wall
 
+library
+    import:           warnings
+    exposed-modules:  Database.Cozo
+    other-modules:
+        Database.Cozo.Internal.Bindings
+        Database.Cozo.Internal.Data
+    other-extensions:
+        CApiFFI
+        ForeignFunctionInterface
+    build-depends:    base ^>=4.18.0.0
+    extra-libraries: cozo_c
+    include-dirs: headers/
+    hs-source-dirs:   src
+    default-language: GHC2021
+
 executable example
     import: warnings
     build-depends:
@@ -24,17 +39,4 @@ executable example
         ,bytestring
     hs-source-dirs: example
     main-is: main.hs
-    default-language: GHC2021
-
-library
-    import:           warnings
-    exposed-modules:  Database.Cozo
-    other-modules:
-        Database.Cozo.Internal.Bindings
-        Database.Cozo.Internal.Data
-    -- other-extensions:
-    build-depends:    base ^>=4.18.0.0
-    extra-libraries: cozo_c
-    include-dirs: headers/
-    hs-source-dirs:   src
     default-language: GHC2021
