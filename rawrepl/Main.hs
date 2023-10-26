@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import Control.Exception (bracket)
+import Control.Exception (bracket, throwIO)
 import Control.Monad
 import Data.ByteString qualified as B
 import Data.String (fromString)
@@ -10,12 +10,12 @@ main :: IO ()
 main =
   bracket
     ( open' "mem" "" "{}"
-        >>= either (error "There was a problem opening a connection" . B.putStr) pure
+        >>= either throwIO pure
     )
     (void . close')
     go
  where
   go conn = do
     x <- getLine
-    query' conn (fromString x) "{}" False >>= B.putStr . (<> "\n")
+    query' conn (fromString x) "{}" False >>= either print (B.putStr . (<> "\n"))
     go conn
