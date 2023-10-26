@@ -5,7 +5,6 @@ module Database.Cozo.Internal (
   open',
   close',
   query',
-  Engine (..),
   Connection,
 ) where
 
@@ -15,45 +14,52 @@ import Database.Cozo.Internal.Bindings
 import Foreign
 import Foreign.C.Types
 
-data Engine
-  = Mem
-  | SQLite
-  | RocksDB
-  deriving (Show, Eq, Ord, Bounded, Enum)
-
 newtype Connection = Connection (Ptr CInt)
 
-open' :: Engine -> ByteString -> IO (Either ByteString Connection)
-open' engine p =
-  B.useAsCString engineToByteString $ \engineStr ->
-    B.useAsCString p $ \path ->
-      B.useAsCString "{}" $ \options -> do
+{- |
+Open a connection to a cozo database
+
+- engine: "mem", "sqlite" or "rocksdb"
+- path: utf8 encoded filepath
+- options: engine-specific options. "{}" is an acceptable empty value.
+-}
+open' ::
+  -- | engine: 'mem', 'sqlite' or 'rocksdb'
+  ByteString ->
+  -- | path: utf8 encoded filepath
+  ByteString ->
+  -- | options: engine-specific options. "{}" is an acceptable emtpy value.
+  ByteString ->
+  IO (Either ByteString Connection)
+open' engineBs pathBs optionBs =
+  B.useAsCString engineBs $ \engine ->
+    B.useAsCString pathBs $ \path ->
+      B.useAsCString optionBs $ \options -> do
         intPtr <- new @CInt 0
-        openMessagePtr <- cozoOpenDB engineStr path options intPtr
+        openMessagePtr <- cozoOpenDB engine path options intPtr
         !mOpenMessage <- maybePeek B.packCString openMessagePtr
-        case mOpenMessage of
-          Just openMessage -> do
-            cozoFreeStr openMessagePtr
-            pure . Left $ openMessage
-          Nothing -> do
-            pure . Right . Connection $ intPtr
- where
-  engineToByteString =
-    case engine of
-      Mem -> "mem"
-      SQLite -> "sqlite"
-      RocksDB -> "rocksdb"
+        maybe
+          (pure . Right . Connection $ intPtr)
+          (\errStr -> Left errStr <$ cozoFreeStr openMessagePtr)
+          mOpenMessage
 
 close' :: Connection -> IO Bool
 close' (Connection dbId) = do
   peek dbId >>= fmap toBool . cozoCloseDB
 
-query' :: Connection -> ByteString -> ByteString -> IO ByteString
-query' (Connection conPtr) q p =
+{- |
+Run a query
+
+- script: utf8 encoded script to execute
+- params_raw: a utf8 encoded, JSON formatted map of parameters for use in the script.
+- b: some boolean that the API is not clear about, set to False.
+-}
+query' :: Connection -> ByteString -> ByteString -> Bool -> IO ByteString
+query' (Connection conPtr) q p b =
   B.useAsCString q $ \q' ->
     B.useAsCString p $ \p' -> do
       dbId <- peek conPtr
-      queryResultsPtr <- cozoRunQuery dbId q' p' (fromBool False)
+      queryResultsPtr <- cozoRunQuery dbId q' p' (fromBool b)
       !mQueryResults <- maybePeek B.packCString queryResultsPtr
       case mQueryResults of
         Nothing -> error "The query returned a null pointer"

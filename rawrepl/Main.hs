@@ -9,7 +9,7 @@ import Database.Cozo
 main :: IO ()
 main =
   bracket
-    ( open' Mem ""
+    ( open' "mem" "" "{}"
         >>= either (error "There was a problem opening a connection" . B.putStr) pure
     )
     (void . close')
@@ -17,5 +17,5 @@ main =
  where
   go conn = do
     x <- getLine
-    query' conn (fromString x) "{}" >>= B.putStr . (<> "\n")
+    query' conn (fromString x) "{}" False >>= B.putStr . (<> "\n")
     go conn
