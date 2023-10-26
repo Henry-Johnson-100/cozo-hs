@@ -1,5 +1,5 @@
 module Database.Cozo (
-  module Database.Cozo.Internal.Bindings,
+  module Database.Cozo.Internal,
 ) where
 
-import Database.Cozo.Internal.Bindings
+import Database.Cozo.Internal
