@@ -29,6 +29,10 @@ library
         base ^>=4.18.0.0
         , aeson
         , bytestring
+        , text
+        , uuid-types
+        , vector
+        , scientific
     extra-libraries: cozo_c
     include-dirs: headers/
     hs-source-dirs:   src

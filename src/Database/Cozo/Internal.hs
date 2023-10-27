@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 
 module Database.Cozo.Internal (
