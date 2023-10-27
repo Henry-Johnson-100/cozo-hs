@@ -27,10 +27,25 @@ library
         ForeignFunctionInterface
     build-depends:
         base ^>=4.18.0.0
+        , aeson
         , bytestring
     extra-libraries: cozo_c
     include-dirs: headers/
     hs-source-dirs:   src
+    default-language: GHC2021
+
+test-suite cozo-hs
+    import: warnings
+    build-depends:
+        base ^>= 4.18.0.0
+        , cozo-hs
+        , aeson
+        , bytestring
+        , tasty
+        , tasty-hunit
+    type: exitcode-stdio-1.0
+    main-is: Main.hs
+    hs-source-dirs: test
     default-language: GHC2021
 
 executable example
@@ -51,4 +66,4 @@ executable rawrepl
         ,bytestring
     hs-source-dirs: rawrepl
     main-is: Main.hs
-    default-language: GHC2021        
+    default-language: GHC2021
