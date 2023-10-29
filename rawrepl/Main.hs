@@ -13,9 +13,11 @@ main =
         >>= either throwIO pure
     )
     (void . close')
-    go
+    $ \c -> do 
+      putStrLn "Using the raw cozo-hs repl."
+      go c
  where
   go conn = do
     x <- getLine
-    runQuery' conn (fromString x) "{}" False >>= either print (B.putStr . (<> "\n"))
+    runQuery conn (fromString x) empty >>= print
     go conn

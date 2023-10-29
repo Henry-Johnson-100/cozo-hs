@@ -18,7 +18,9 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  Database.Cozo
+    exposed-modules:
+        Database.Cozo
+        Database.Cozo.FromRelation
     other-modules:
         Database.Cozo.Internal
         Database.Cozo.Internal.Bindings
@@ -30,9 +32,6 @@ library
         , aeson
         , bytestring
         , text
-        , uuid-types
-        , vector
-        , scientific
     extra-libraries: cozo_c
     include-dirs: headers/
     hs-source-dirs:   src

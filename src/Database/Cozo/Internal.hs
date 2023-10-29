@@ -1,5 +1,8 @@
 {-# LANGUAGE StrictData #-}
 {-# OPTIONS_GHC -Wno-typed-holes #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use newtype instead of data" #-}
 
 module Database.Cozo.Internal (
   open',
@@ -12,6 +15,7 @@ module Database.Cozo.Internal (
   importFromBackup',
   Connection,
   InternalCozoError (..),
+  CozoNullResultPtrException (..),
 ) where
 
 import Control.Exception (Exception)
@@ -46,13 +50,15 @@ newtype Connection = Connection (Ptr CInt)
 {- |
 Wrapper around primitive failure states.
 -}
-data InternalCozoError
+newtype InternalCozoError
   = InternalCozoError ByteString
-  | -- | This error corresponds to an unexpected null pointer as a result from a query.
-    CozoNullResultPtr
   deriving (Show, Eq, Generic)
 
 instance Exception InternalCozoError
+
+data CozoNullResultPtrException = CozoNullResultPtrException deriving (Show, Eq, Generic)
+
+instance Exception CozoNullResultPtrException
 
 {- |
 Open a connection to a cozo database
@@ -105,7 +111,7 @@ runQuery' ::
   ByteString ->
   ByteString ->
   Bool ->
-  IO (Either InternalCozoError ByteString)
+  IO (Either CozoNullResultPtrException ByteString)
 runQuery' c q p b =
   B.useAsCString q $ \q' ->
     B.useAsCString p $ \p' ->
@@ -120,7 +126,10 @@ Triggers are not run for relations, if you wish to activate triggers, use a quer
 The given bytestring is a utf8, JSON formatted payload of relations.
 In the same form as that given by `exportRelations'`
 -}
-importRelations' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+importRelations' ::
+  Connection ->
+  ByteString ->
+  IO (Either CozoNullResultPtrException ByteString)
 importRelations' c payloadBs =
   B.useAsCString payloadBs $ \payload ->
     cozoCharPtrFn (`cozoImportRelations` payload) c
@@ -131,7 +140,10 @@ Export relations into JSON
 The given bytestring must be a utf8 encoded JSON payload. See the manual for expected
 fields.
 -}
-exportRelations' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+exportRelations' ::
+  Connection ->
+  ByteString ->
+  IO (Either CozoNullResultPtrException ByteString)
 exportRelations' c payloadBs =
   B.useAsCString payloadBs $ \payload ->
     cozoCharPtrFn (`cozoExportRelations` payload) c
@@ -141,7 +153,7 @@ Backup a database.
 
 Accepts the path of the output file.
 -}
-backup' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+backup' :: Connection -> ByteString -> IO (Either CozoNullResultPtrException ByteString)
 backup' c pathBs =
   B.useAsCString pathBs $ \path ->
     cozoCharPtrFn (`cozoBackup` path) c
@@ -149,7 +161,7 @@ backup' c pathBs =
 {- |
 Restore a database from a backup.
 -}
-restore' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+restore' :: Connection -> ByteString -> IO (Either CozoNullResultPtrException ByteString)
 restore' c pathBs =
   B.useAsCString pathBs $ \path ->
     cozoCharPtrFn (`cozoRestore` path) c
@@ -162,7 +174,10 @@ To run triggers, use a query with parameters.
 
 - payload: @"{'path': ..., 'relations': [...]}"@
 -}
-importFromBackup' :: Connection -> ByteString -> IO (Either InternalCozoError ByteString)
+importFromBackup' ::
+  Connection ->
+  ByteString ->
+  IO (Either CozoNullResultPtrException ByteString)
 importFromBackup' c payloadBs =
   B.useAsCString payloadBs $ \payload ->
     cozoCharPtrFn (`cozoImportFromBackup` payload) c
@@ -174,11 +189,11 @@ string that needs to be freed.
 cozoCharPtrFn ::
   (CInt -> IO (Ptr CChar)) ->
   Connection ->
-  IO (Either InternalCozoError ByteString)
+  IO (Either CozoNullResultPtrException ByteString)
 cozoCharPtrFn a (Connection intPtr) = do
   dbId <- peek intPtr
   rPtr <- a dbId
   !mR <- maybePeek B.packCString rPtr
   case mR of
-    Nothing -> pure . Left $ CozoNullResultPtr
+    Nothing -> pure . Left $ CozoNullResultPtrException
     Just r -> Right r <$ cozoFreeStr rPtr
