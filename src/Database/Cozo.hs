@@ -1,21 +1,24 @@
-{-# HLINT ignore "Avoid lambda" #-}
-{-# HLINT ignore "Use const" #-}
-{-# HLINT ignore "Redundant if" #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# HLINT ignore "Use newtype instead of data" #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE StrictData #-}
-{-# HLINT ignore "Redundant case" #-}
-{-# OPTIONS_GHC -Wno-typed-holes #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Database.Cozo (
+  -- * Data
+  CozoResult (..),
+  CozoOkay (..),
+  CozoBad (..),
+  CozoResultParseError (..),
+
+  -- * Function
   runQuery,
-  module Database.Cozo.Internal,
 
   -- * re-export
+  module Database.Cozo.Internal,
+  Key,
+  KeyMap,
   KM.empty,
+  KM.singleton,
+  KM.insert,
+  Value (..),
 ) where
 
 import Control.Exception (Exception, throwIO)
@@ -23,21 +26,25 @@ import Data.Aeson (
   FromJSON (parseJSON),
   ToJSON (toEncoding),
   Value (Bool),
-  decodeStrict,
+  eitherDecodeStrict,
   fromEncoding,
   withObject,
   (.:),
  )
-import Data.Aeson.KeyMap (KeyMap)
+import Data.Aeson.KeyMap (Key, KeyMap)
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types (Parser)
-import Data.ByteString (toStrict)
+import Data.ByteString (ByteString, toStrict)
 import Data.ByteString.Builder (toLazyByteString)
 import Data.Coerce (coerce)
 import Data.Text (Text)
-import Data.Text.Encoding (encodeUtf8)
 import Database.Cozo.Internal
 import GHC.Generics (Generic)
+
+newtype CozoResultParseError = CozoResultParseError String
+  deriving (Show, Eq, Generic)
+
+instance Exception CozoResultParseError
 
 data CozoOkay = CozoOkay
   { headers :: [Text]
@@ -46,8 +53,6 @@ data CozoOkay = CozoOkay
   , took :: Double
   }
   deriving (Show, Eq, Generic)
-
-instance FromJSON CozoOkay
 
 data CozoBad = CozoBad
   { causes :: [Value]
@@ -58,10 +63,6 @@ data CozoBad = CozoBad
   , severity :: Text
   }
   deriving (Show, Eq, Generic)
-
-instance FromJSON CozoBad
-
-instance Exception CozoBad
 
 newtype CozoResult = CozoResult {runCozoResult :: Either CozoBad CozoOkay}
   deriving (Show, Eq, Generic)
@@ -106,62 +107,34 @@ instance FromJSON CozoResult where
                         )
           _ -> fail "\"ok\" field did not contain a Boolean."
 
-runQuery :: Connection -> Text -> KeyMap Value -> IO (Either CozoBad CozoOkay)
-runQuery c q p =
-  runQuery'
-    c
-    (encodeUtf8 q)
-    (toStrict . toLazyByteString . fromEncoding . toEncoding $ p)
-    False
-    >>= either
-      throwIO
-      ( maybe
-          (throwIO CozoNullResultPtrException)
-          (pure . runCozoResult)
-          . decodeStrict
-      )
+{- |
+Run a utf8 encoded query with a map of parameters.
 
--- data CozoRuntimeValue
---   = CozoRuntimeNull
---   | CozoRuntimeBool Bool
---   | CozoRuntimeNumber Scientific
---   | CozoRuntimeText Text
---   | CozoRuntimeVec (Vector CozoRuntimeValue)
---   | CozoRuntimeJson (KeyMap CozoRuntimeValue)
---   deriving (Show, Eq, Generic)
+Returns an error if the result could not be parsed. Otherwise returns
+  a newtype wrapper over an @Either CozoBad CozoOkay@ which denotes the
+  success state of the given query.
 
--- instance FromJSON CozoRuntimeValue
+The only reason that a Left parse error may be returned from this function is some
+unexpected field or absence of an expected field in the return type.
 
--- instance ToJSON CozoRuntimeValue
+Parameters are declared with
+text names and can be cany valid JSON type. They are referenced in a query by a '$'
+preceding their name.
 
--- data CozoColumnAtomicType
---   = CozoInt
---   | CozoFloat
---   | CozoBool
---   | CozoString
---   | CozoBytes
---   | CozoUuid
---   | CozoJson
---   | CozoValidity
---   deriving (Show, Eq, Generic, Enum, Ord)
-
--- data CozoColumnCompositeType
---   = CozoHomogeneousList CozoColumnType (Maybe Int)
---   | CozoHeterogeneousList [CozoColumnType]
---   | CozoVec CozoVecType Int
---   deriving (Show, Eq, Generic)
-
--- data CozoVecType
---   = F32
---   | F64
---   deriving (Show, Eq, Generic)
-
--- data CozoColumnSumType
---   = CozoAnyColumnType
---   | CozoColumnAtomicType CozoColumnAtomicType
---   | CozoColumnCompositeType CozoColumnCompositeType
---   deriving (Show, Eq, Generic)
-
--- data CozoColumnType
---   = CozoColumnType CozoColumnSumType Bool
---   deriving (Show, Eq, Generic)
+May throw a `CozoNullResultPtrException` if the query returns a null pointer.
+I don't believe that this will ever happen.
+-}
+runQuery ::
+  Connection ->
+  ByteString ->
+  KeyMap Value ->
+  IO (Either CozoResultParseError CozoResult)
+runQuery c query params =
+  coerce @(Either String CozoResult) @(Either CozoResultParseError CozoResult)
+    . eitherDecodeStrict
+    <$> ( runQuery'
+            c
+            query
+            (toStrict . toLazyByteString . fromEncoding . toEncoding $ params)
+            >>= either throwIO pure
+        )

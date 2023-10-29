@@ -3,6 +3,9 @@
 import Control.Exception (bracket, throwIO)
 import Control.Monad
 import Data.ByteString qualified as B
+import Data.Coerce (coerce)
+import Data.Foldable (traverse_)
+import Data.List (intercalate)
 import Data.String (fromString)
 import Database.Cozo
 
@@ -13,11 +16,18 @@ main =
         >>= either throwIO pure
     )
     (void . close')
-    $ \c -> do 
+    $ \c -> do
       putStrLn "Using the raw cozo-hs repl."
       go c
  where
   go conn = do
     x <- getLine
-    runQuery conn (fromString x) empty >>= print
+    either
+      throwIO
+      ( either
+          (print . message)
+          (traverse_ (putStrLn . intercalate ", " . map show) . rows)
+          . coerce
+      )
+      =<< runQuery conn (fromString x) empty
     go conn

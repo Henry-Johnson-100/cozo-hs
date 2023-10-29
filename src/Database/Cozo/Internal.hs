@@ -104,18 +104,16 @@ mean the query was successful.
 
 - script: utf8 encoded script to execute
 - params_raw: a utf8 encoded, JSON formatted map of parameters for use in the script.
-- b: some boolean that the API is not clear about, set to False.
 -}
 runQuery' ::
   Connection ->
   ByteString ->
   ByteString ->
-  Bool ->
   IO (Either CozoNullResultPtrException ByteString)
-runQuery' c q p b =
+runQuery' c q p =
   B.useAsCString q $ \q' ->
     B.useAsCString p $ \p' ->
-      cozoCharPtrFn (\i -> cozoRunQuery i q' p' (fromBool b)) c
+      cozoCharPtrFn (\i -> cozoRunQuery i q' p' (fromBool False)) c
 
 {- |
 Import data in relations.
