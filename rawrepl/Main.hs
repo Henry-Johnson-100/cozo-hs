@@ -1,4 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Redundant case" #-}
 
 import Control.Exception (bracket, throwIO)
 import Control.Monad
@@ -12,22 +15,19 @@ import Database.Cozo
 main :: IO ()
 main =
   bracket
-    ( open' "mem" "" "{}"
-        >>= either throwIO pure
-    )
-    (void . close')
+    (open "mem" "" "{}")
+    (void . close)
     $ \c -> do
       putStrLn "Using the raw cozo-hs repl."
       go c
  where
   go conn = do
-    x <- getLine
-    either
-      throwIO
-      ( either
-          (print . message)
-          (traverse_ (putStrLn . intercalate ", " . map show) . rows)
-          . coerce
-      )
-      =<< runQuery conn (fromString x) empty
+    getLine >>= putQueryResults
     go conn
+   where
+    putQueryResults q =
+      either
+        (print . message)
+        (traverse_ (putStrLn . intercalate ", " . map show) . rows)
+        . coerce
+        =<< runQuery conn (fromString q) empty

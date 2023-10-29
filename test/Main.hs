@@ -15,11 +15,8 @@ connectionTests :: TestTree
 connectionTests =
   testGroup
     "Connection Tests"
-    [ testCase "Establish Connection" $ do
-        ec <- open' "mem" "" "{}"
-        case ec of
-          Left err -> assertFailure . show $ err
-          Right c ->
-            close' c
-              >>= assertBool "Database was already closed or did not exist."
+    [ testCase "Establish Connection"
+        $ open "mem" "" "{}"
+        >>= close
+        >>= assertBool "Database was already closed or did not exist."
     ]

@@ -9,10 +9,11 @@ module Database.Cozo (
   CozoResultParseError (..),
 
   -- * Function
+  open,
+  close,
   runQuery,
 
   -- * re-export
-  module Database.Cozo.Internal,
   Key,
   KeyMap,
   KM.empty,
@@ -108,14 +109,32 @@ instance FromJSON CozoResult where
           _ -> fail "\"ok\" field did not contain a Boolean."
 
 {- |
+Open a connection to a cozo database
+
+- engine: "mem", "sqlite" or "rocksdb"
+- path: utf8 encoded filepath
+- options: engine-specific options. "{}" is an acceptable empty value.
+-}
+open :: ByteString -> ByteString -> ByteString -> IO Connection
+open engine path options = open' engine path options >>= either throwIO pure
+
+{- |
+True if the database was closed and False if it was already closed or if it
+does not exist.
+-}
+close :: Connection -> IO Bool
+close = close'
+
+{- |
 Run a utf8 encoded query with a map of parameters.
 
-Returns an error if the result could not be parsed. Otherwise returns
+Throws an error if the result could not be parsed. Otherwise returns
   a newtype wrapper over an @Either CozoBad CozoOkay@ which denotes the
   success state of the given query.
 
-The only reason that a Left parse error may be returned from this function is some
-unexpected field or absence of an expected field in the return type.
+The only reason that a parse error may be thrown from this function is some
+unexpected field or absence of an expected field in the return type which would be
+an abnormality of the underlying API.
 
 Parameters are declared with
 text names and can be cany valid JSON type. They are referenced in a query by a '$'
@@ -128,13 +147,12 @@ runQuery ::
   Connection ->
   ByteString ->
   KeyMap Value ->
-  IO (Either CozoResultParseError CozoResult)
-runQuery c query params =
-  coerce @(Either String CozoResult) @(Either CozoResultParseError CozoResult)
-    . eitherDecodeStrict
-    <$> ( runQuery'
-            c
-            query
-            (toStrict . toLazyByteString . fromEncoding . toEncoding $ params)
-            >>= either throwIO pure
-        )
+  IO CozoResult
+runQuery c query params = do
+  r <-
+    either throwIO pure
+      =<< runQuery'
+        c
+        query
+        (toStrict . toLazyByteString . fromEncoding . toEncoding $ params)
+  either (throwIO . CozoResultParseError) pure . eitherDecodeStrict $ r
