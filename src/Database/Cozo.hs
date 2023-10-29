@@ -1,19 +1,29 @@
+{-# HLINT ignore "Use const" #-}
+{-# HLINT ignore "Eta reduce" #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE StrictData #-}
+{-# OPTIONS_GHC -Wno-typed-holes #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Database.Cozo (
   -- * Data
   CozoResult (..),
   CozoOkay (..),
   CozoBad (..),
-  CozoResultParseError (..),
+  CozoException (..),
 
   -- * Function
   open,
   close,
   runQuery,
+  backup,
+  restore,
 
   -- * re-export
+  CozoNullResultPtrException,
+  Database.Cozo.Internal.InternalCozoError,
   Key,
   KeyMap,
   KM.empty,
@@ -22,91 +32,111 @@ module Database.Cozo (
   Value (..),
 ) where
 
-import Control.Exception (Exception, throwIO)
+import Control.Exception (Exception)
 import Data.Aeson (
   FromJSON (parseJSON),
+  Options (fieldLabelModifier),
   ToJSON (toEncoding),
-  Value (Bool),
+  Value (..),
+  defaultOptions,
   eitherDecodeStrict,
   fromEncoding,
+  genericParseJSON,
   withObject,
-  (.:),
  )
 import Data.Aeson.KeyMap (Key, KeyMap)
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types (Parser)
+import Data.Bifunctor (Bifunctor (first))
 import Data.ByteString (ByteString, toStrict)
 import Data.ByteString.Builder (toLazyByteString)
-import Data.Coerce (coerce)
+import Data.Char (toLower)
 import Data.Text (Text)
 import Database.Cozo.Internal
 import GHC.Generics (Generic)
 
-newtype CozoResultParseError = CozoResultParseError String
+data CozoException
+  = CozoExceptionInternal InternalCozoError
+  | CozoErrorNullPtr CozoNullResultPtrException
+  | CozoJSONParseException String
+  | CozoOperationFailed Text
   deriving (Show, Eq, Generic)
 
-instance Exception CozoResultParseError
+instance Exception CozoException
+
+newtype CozoErrorReport = CozoErrorReport {runCozoErrorReport :: Maybe Text}
+  deriving (Show, Eq, Generic)
+
+instance FromJSON CozoErrorReport where
+  parseJSON :: Value -> Parser CozoErrorReport
+  parseJSON =
+    eitherOkay
+      "CozoErrorReport"
+      ( withObject
+          "CozoErrorReport"
+          ( \o ->
+              case KM.lookup "message" o of
+                Nothing -> fail "Expecting a 'message' field."
+                Just m ->
+                  case m of
+                    String ms -> pure . CozoErrorReport . Just $ ms
+                    _ -> fail "Expecting the 'message' field to have a type of String."
+          )
+      )
+      (const (pure (CozoErrorReport Nothing)))
 
 data CozoOkay = CozoOkay
-  { headers :: [Text]
-  , next :: Maybe Value
-  , rows :: [[Value]]
-  , took :: Double
+  { cozoOkayHeaders :: [Text]
+  , cozoOkayNext :: Maybe Value
+  , cozoOkayRows :: [[Value]]
+  , cozoOkayTook :: Double
   }
   deriving (Show, Eq, Generic)
 
+instance FromJSON CozoOkay where
+  parseJSON :: Value -> Parser CozoOkay
+  parseJSON =
+    genericParseJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 8 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+
 data CozoBad = CozoBad
-  { causes :: [Value]
-  , code :: Text
-  , display :: Text
-  , message :: Text
-  , related :: Value
-  , severity :: Text
+  { cozoBadCauses :: [Value]
+  , cozoBadCode :: Text
+  , cozoBadDisplay :: Text
+  , cozoBadMessage :: Text
+  , cozoBadRelated :: Value
+  , cozoBadSeverity :: Text
   }
   deriving (Show, Eq, Generic)
+
+instance FromJSON CozoBad where
+  parseJSON :: Value -> Parser CozoBad
+  parseJSON =
+    genericParseJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 7 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
 
 newtype CozoResult = CozoResult {runCozoResult :: Either CozoBad CozoOkay}
   deriving (Show, Eq, Generic)
 
 instance FromJSON CozoResult where
   parseJSON :: Value -> Parser CozoResult
-  parseJSON = withObject "CozoResult" $ \v ->
-    case KM.lookup "ok" v of
-      Nothing -> fail "Result did not contain \"ok\" field"
-      Just ok ->
-        case ok of
-          Bool b ->
-            coerce
-              $ if b
-                then
-                  Right
-                    <$> ( CozoOkay
-                            <$> v
-                            .: "headers"
-                            <*> v
-                            .: "next"
-                            <*> v
-                            .: "rows"
-                            <*> v
-                            .: "took"
-                        )
-                else
-                  Left
-                    <$> ( CozoBad
-                            <$> v
-                            .: "causes"
-                            <*> v
-                            .: "code"
-                            <*> v
-                            .: "display"
-                            <*> v
-                            .: "message"
-                            <*> v
-                            .: "related"
-                            <*> v
-                            .: "severity"
-                        )
-          _ -> fail "\"ok\" field did not contain a Boolean."
+  parseJSON =
+    eitherOkay
+      "CozoResult"
+      (fmap (CozoResult . Left) . parseJSON)
+      (fmap (CozoResult . Right) . parseJSON)
 
 {- |
 Open a connection to a cozo database
@@ -115,8 +145,8 @@ Open a connection to a cozo database
 - path: utf8 encoded filepath
 - options: engine-specific options. "{}" is an acceptable empty value.
 -}
-open :: ByteString -> ByteString -> ByteString -> IO Connection
-open engine path options = open' engine path options >>= either throwIO pure
+open :: ByteString -> ByteString -> ByteString -> IO (Either CozoException Connection)
+open engine path options = first CozoExceptionInternal <$> open' engine path options
 
 {- |
 True if the database was closed and False if it was already closed or if it
@@ -128,31 +158,78 @@ close = close'
 {- |
 Run a utf8 encoded query with a map of parameters.
 
-Throws an error if the result could not be parsed. Otherwise returns
-  a newtype wrapper over an @Either CozoBad CozoOkay@ which denotes the
-  success state of the given query.
-
-The only reason that a parse error may be thrown from this function is some
-unexpected field or absence of an expected field in the return type which would be
-an abnormality of the underlying API.
-
 Parameters are declared with
 text names and can be cany valid JSON type. They are referenced in a query by a '$'
 preceding their name.
-
-May throw a `CozoNullResultPtrException` if the query returns a null pointer.
-I don't believe that this will ever happen.
 -}
 runQuery ::
   Connection ->
   ByteString ->
   KeyMap Value ->
-  IO CozoResult
+  IO (Either CozoException CozoResult)
 runQuery c query params = do
   r <-
-    either throwIO pure
-      =<< runQuery'
-        c
-        query
-        (toStrict . toLazyByteString . fromEncoding . toEncoding $ params)
-  either (throwIO . CozoResultParseError) pure . eitherDecodeStrict $ r
+    runQuery'
+      c
+      query
+      ( toStrict
+          . toLazyByteString
+          . fromEncoding
+          . toEncoding
+          $ params
+      )
+  pure $ do
+    r' <- first CozoErrorNullPtr r
+    cozoDecode r'
+
+{- |
+Backup a database.
+
+Accepts the path of the output file.
+-}
+backup :: Connection -> ByteString -> IO (Either CozoException ())
+backup c path =
+  decodeCozoCharPtrFn
+    <$> backup' c path
+
+{- |
+Restore a database from a backup.
+-}
+restore :: Connection -> ByteString -> IO (Either CozoException ())
+restore c path =
+  decodeCozoCharPtrFn
+    <$> restore' c path
+
+decodeCozoCharPtrFn ::
+  Either CozoNullResultPtrException ByteString ->
+  Either CozoException ()
+decodeCozoCharPtrFn e = do
+  e' <- first CozoErrorNullPtr e
+  p <- cozoDecode e'
+  maybe (pure ()) (Left . CozoOperationFailed) . runCozoErrorReport $ p
+
+cozoDecode :: (FromJSON a) => ByteString -> Either CozoException a
+cozoDecode = first CozoJSONParseException . eitherDecodeStrict
+
+{- |
+Helper for defining JSON disjunctions that
+switch on the value of an 'ok' boolean field.
+-}
+eitherOkay ::
+  String ->
+  (Value -> Parser a) ->
+  (Value -> Parser a) ->
+  Value ->
+  Parser a
+eitherOkay s l r =
+  withObject
+    s
+    ( \o ->
+        case KM.lookup "ok" o of
+          Nothing -> fail "Result did not contain \"ok\" field"
+          Just ok ->
+            case ok of
+              Bool b ->
+                if b then r (Object o) else l (Object o)
+              _ -> fail "\"ok\" field did not contain a Boolean."
+    )

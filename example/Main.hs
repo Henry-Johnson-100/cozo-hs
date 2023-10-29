@@ -13,12 +13,13 @@ import Database.Cozo
 main :: IO ()
 main =
   bracket
-    ( open "mem" "" "{}"
+    ( open "mem" "" "{}" >>= either throwIO pure
     )
     (void . close)
     $ \conn -> do
       either
-        (print . message)
-        (traverse_ (putStrLn . intercalate ", " . map show) . rows)
+        (print . cozoBadMessage)
+        (traverse_ (putStrLn . intercalate ", " . map show) . cozoOkayRows)
         . coerce
+        =<< either throwIO pure
         =<< runQuery conn "?[] <- [[1,2,3], ['a','b','c']]" empty

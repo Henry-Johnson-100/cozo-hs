@@ -15,7 +15,7 @@ import Database.Cozo
 main :: IO ()
 main =
   bracket
-    (open "mem" "" "{}")
+    (open "mem" "" "{}" >>= either throwIO pure)
     (void . close)
     $ \c -> do
       putStrLn "Using the raw cozo-hs repl."
@@ -27,7 +27,8 @@ main =
    where
     putQueryResults q =
       either
-        (print . message)
-        (traverse_ (putStrLn . intercalate ", " . map show) . rows)
+        (print . cozoBadMessage)
+        (traverse_ (putStrLn . intercalate ", " . map show) . cozoOkayRows)
         . coerce
+        =<< either throwIO pure
         =<< runQuery conn (fromString q) empty
