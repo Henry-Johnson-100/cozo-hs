@@ -35,10 +35,9 @@ library
         aeson >= 2.2.1 && < 2.3,
         bytestring >= 0.11.4 && < 0.12,
         text >= 2.0.2 && < 2.1,
-    extra-libraries: cozo_c
-    include-dirs: headers/
     hs-source-dirs:   src
     default-language: GHC2021
+    pkgconfig-depends: libcozo_c == 0.7.5
 
 test-suite cozo-hs-test
     import: warnings

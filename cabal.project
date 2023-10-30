@@ -1,3 +1,2 @@
-optimization: 0
 packages: ./
--- extra-lib-dirs: /home/monax/Repo/cozo/target/release/
+optimization: 0
