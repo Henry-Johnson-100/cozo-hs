@@ -11,6 +11,8 @@ module Database.Cozo (
   CozoResult (..),
   CozoOkay (..),
   CozoBad (..),
+  CozoRelationExportPayload (..),
+  CozoRelationExport (..),
   CozoException (..),
 
   -- * Function
@@ -93,15 +95,15 @@ instance FromJSON CozoMessage where
 cozoMessageToException :: CozoMessage -> CozoException
 cozoMessageToException (CozoMessage m) = CozoOperationFailed m
 
-data CozoRelationExport a = CozoRelationExport
+data CozoRelationExport = CozoRelationExport
   { cozoRelationExportHeaders :: [Text]
   , cozoRelationExportNext :: Maybe Value
-  , cozoRelationExportRows :: [a]
+  , cozoRelationExportRows :: [[Value]]
   }
-  deriving (Show, Eq, Generic, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Generic)
 
-instance FromJSON (CozoRelationExport [Value]) where
-  parseJSON :: Value -> Parser (CozoRelationExport [Value])
+instance FromJSON CozoRelationExport where
+  parseJSON :: Value -> Parser CozoRelationExport
   parseJSON =
     genericParseJSON
       ( defaultOptions
@@ -112,8 +114,8 @@ instance FromJSON (CozoRelationExport [Value]) where
           }
       )
 
-instance ToJSON (CozoRelationExport [Value]) where
-  toJSON :: CozoRelationExport [Value] -> Value
+instance ToJSON CozoRelationExport where
+  toJSON :: CozoRelationExport -> Value
   toJSON =
     genericToJSON
       ( defaultOptions
@@ -124,7 +126,7 @@ instance ToJSON (CozoRelationExport [Value]) where
           }
       )
 
-  toEncoding :: CozoRelationExport [Value] -> Encoding
+  toEncoding :: CozoRelationExport -> Encoding
   toEncoding =
     genericToEncoding
       ( defaultOptions
@@ -136,7 +138,7 @@ instance ToJSON (CozoRelationExport [Value]) where
       )
 
 newtype CozoRelationExportPayload = CozoRelationExportPayload
-  { cozoRelationExportPayloadData :: KeyMap (CozoRelationExport [Value])
+  { cozoRelationExportPayloadData :: KeyMap CozoRelationExport
   }
   deriving (Show, Eq, Generic)
 
