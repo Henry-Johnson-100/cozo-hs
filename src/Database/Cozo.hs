@@ -1,6 +1,5 @@
 {-# HLINT ignore "Use const" #-}
 {-# HLINT ignore "Eta reduce" #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE StrictData #-}
@@ -20,6 +19,7 @@ module Database.Cozo (
   runQuery,
   backup,
   restore,
+  exportRelations,
 
   -- * re-export
   CozoNullResultPtrException,
@@ -36,24 +36,33 @@ import Control.Exception (Exception)
 import Data.Aeson (
   FromJSON (parseJSON),
   Options (fieldLabelModifier),
-  ToJSON (toEncoding),
+  ToJSON (..),
   Value (..),
   defaultOptions,
   eitherDecodeStrict,
   fromEncoding,
   genericParseJSON,
+  genericToEncoding,
+  genericToJSON,
   withObject,
  )
 import Data.Aeson.KeyMap (Key, KeyMap)
 import Data.Aeson.KeyMap qualified as KM
-import Data.Aeson.Types (Parser)
-import Data.Bifunctor (Bifunctor (first))
+import Data.Aeson.Types (Encoding, Parser)
+import Data.Bifunctor (Bifunctor (bimap, first))
 import Data.ByteString (ByteString, toStrict)
 import Data.ByteString.Builder (toLazyByteString)
 import Data.Char (toLower)
 import Data.Text (Text)
+import Data.Text.Encoding (encodeUtf8)
 import Database.Cozo.Internal
 import GHC.Generics (Generic)
+
+data ConstJSON = ConstJSON deriving (Show, Eq, Generic)
+
+instance FromJSON ConstJSON where
+  parseJSON :: Value -> Parser ConstJSON
+  parseJSON _ = pure ConstJSON
 
 data CozoException
   = CozoExceptionInternal InternalCozoError
@@ -64,26 +73,108 @@ data CozoException
 
 instance Exception CozoException
 
-newtype CozoErrorReport = CozoErrorReport {runCozoErrorReport :: Maybe Text}
+newtype CozoMessage = CozoMessage {runCozoMessage :: Text}
   deriving (Show, Eq, Generic)
 
-instance FromJSON CozoErrorReport where
-  parseJSON :: Value -> Parser CozoErrorReport
+instance FromJSON CozoMessage where
+  parseJSON :: Value -> Parser CozoMessage
+  parseJSON =
+    genericParseJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 7 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+
+cozoMessageToException :: CozoMessage -> CozoException
+cozoMessageToException (CozoMessage m) = CozoOperationFailed m
+
+data CozoRelationExport a = CozoRelationExport
+  { cozoRelationExportHeaders :: [Text]
+  , cozoRelationExportNext :: Maybe Value
+  , cozoRelationExportRows :: [a]
+  }
+  deriving (Show, Eq, Generic, Functor, Foldable, Traversable)
+
+instance FromJSON (CozoRelationExport [Value]) where
+  parseJSON =
+    genericParseJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 18 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+
+newtype CozoRelationExportPayload = CozoRelationExportPayload
+  { cozoRelationExportPayloadData :: KeyMap (CozoRelationExport [Value])
+  }
+  deriving (Show, Eq, Generic)
+
+instance FromJSON CozoRelationExportPayload where
+  parseJSON :: Value -> Parser CozoRelationExportPayload
+  parseJSON =
+    genericParseJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 25 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+
+{- |
+An intermediate type for decoding structures that return an object with a 'message' field
+when the 'ok' field is false.
+-}
+newtype IntermediateCozoMessageOnNotOK a = IntermediateCozoMessageOnNotOK
+  { runIntermediateCozoMessageOnNotOK :: Either CozoMessage a
+  }
+  deriving (Show, Eq, Generic)
+
+instance (FromJSON a) => FromJSON (IntermediateCozoMessageOnNotOK a) where
+  parseJSON :: Value -> Parser (IntermediateCozoMessageOnNotOK a)
   parseJSON =
     eitherOkay
-      "CozoErrorReport"
-      ( withObject
-          "CozoErrorReport"
-          ( \o ->
-              case KM.lookup "message" o of
-                Nothing -> fail "Expecting a 'message' field."
-                Just m ->
-                  case m of
-                    String ms -> pure . CozoErrorReport . Just $ ms
-                    _ -> fail "Expecting the 'message' field to have a type of String."
-          )
+      "IntermediateCozoRelationExport"
+      (fmap (IntermediateCozoMessageOnNotOK . Left) . parseJSON)
+      (fmap (IntermediateCozoMessageOnNotOK . Right) . parseJSON)
+
+{- |
+An intermediate type for packing a list of named relations into an object with the form
+{"relations": [...]}
+-}
+newtype IntermediateCozoRelationInput = IntermediateCozoRelationInput
+  { intermediateCozoRelationInputRelations :: [Text]
+  }
+  deriving (Show, Eq, Generic)
+
+instance ToJSON IntermediateCozoRelationInput where
+  toJSON :: IntermediateCozoRelationInput -> Value
+  toJSON =
+    genericToJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 29 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
       )
-      (const (pure (CozoErrorReport Nothing)))
+  toEncoding ::
+    IntermediateCozoRelationInput ->
+    Encoding
+  toEncoding =
+    genericToEncoding
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 29 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
 
 data CozoOkay = CozoOkay
   { cozoOkayHeaders :: [Text]
@@ -145,8 +236,13 @@ Open a connection to a cozo database
 - path: utf8 encoded filepath
 - options: engine-specific options. "{}" is an acceptable empty value.
 -}
-open :: ByteString -> ByteString -> ByteString -> IO (Either CozoException Connection)
-open engine path options = first CozoExceptionInternal <$> open' engine path options
+open :: Text -> Text -> Text -> IO (Either CozoException Connection)
+open engine path options =
+  first CozoExceptionInternal
+    <$> open'
+      (encodeUtf8 engine)
+      (encodeUtf8 path)
+      (encodeUtf8 options)
 
 {- |
 True if the database was closed and False if it was already closed or if it
@@ -159,19 +255,19 @@ close = close'
 Run a utf8 encoded query with a map of parameters.
 
 Parameters are declared with
-text names and can be cany valid JSON type. They are referenced in a query by a '$'
+text names and can be any valid JSON type. They are referenced in a query by a '$'
 preceding their name.
 -}
 runQuery ::
   Connection ->
-  ByteString ->
+  Text ->
   KeyMap Value ->
   IO (Either CozoException CozoResult)
 runQuery c query params = do
   r <-
     runQuery'
       c
-      query
+      (encodeUtf8 query)
       ( toStrict
           . toLazyByteString
           . fromEncoding
@@ -185,26 +281,46 @@ Backup a database.
 
 Accepts the path of the output file.
 -}
-backup :: Connection -> ByteString -> IO (Either CozoException ())
+backup :: Connection -> Text -> IO (Either CozoException ())
 backup c path =
   decodeCozoCharPtrFn
-    <$> backup' c path
+    <$> backup' c (encodeUtf8 path)
 
 {- |
 Restore a database from a backup.
 -}
-restore :: Connection -> ByteString -> IO (Either CozoException ())
+restore :: Connection -> Text -> IO (Either CozoException ())
 restore c path =
   decodeCozoCharPtrFn
-    <$> restore' c path
+    <$> restore' c (encodeUtf8 path)
+
+exportRelations ::
+  Connection ->
+  [Text] ->
+  IO (Either CozoException CozoRelationExportPayload)
+exportRelations c bs = do
+  r <-
+    exportRelations'
+      c
+      ( strictToEncoding
+          . IntermediateCozoRelationInput
+          $ bs
+      )
+  pure
+    $ first CozoErrorNullPtr r
+    >>= first CozoJSONParseException
+    . eitherDecodeStrict @(IntermediateCozoMessageOnNotOK CozoRelationExportPayload)
+    >>= first cozoMessageToException
+    . runIntermediateCozoMessageOnNotOK
 
 decodeCozoCharPtrFn ::
   Either CozoNullResultPtrException ByteString ->
   Either CozoException ()
-decodeCozoCharPtrFn e = do
-  e' <- first CozoErrorNullPtr e
-  p <- cozoDecode e'
-  maybe (pure ()) (Left . CozoOperationFailed) . runCozoErrorReport $ p
+decodeCozoCharPtrFn e =
+  first CozoErrorNullPtr e
+    >>= cozoDecode @(IntermediateCozoMessageOnNotOK ConstJSON)
+    >>= bimap cozoMessageToException (const ())
+    . runIntermediateCozoMessageOnNotOK
 
 cozoDecode :: (FromJSON a) => ByteString -> Either CozoException a
 cozoDecode = first CozoJSONParseException . eitherDecodeStrict
@@ -231,3 +347,10 @@ eitherOkay s l r =
                 if b then r (Object o) else l (Object o)
               _ -> fail "\"ok\" field did not contain a Boolean."
     )
+
+strictToEncoding :: (ToJSON a) => a -> ByteString
+strictToEncoding =
+  toStrict
+    . toLazyByteString
+    . fromEncoding
+    . toEncoding
