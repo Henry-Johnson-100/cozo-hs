@@ -36,6 +36,7 @@ module Database.Cozo (
   importFromBackup',
 
   -- * re-export
+  Connection,
   CozoNullResultPtrException,
   Database.Cozo.Internal.InternalCozoError,
   Key,
