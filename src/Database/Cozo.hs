@@ -371,13 +371,9 @@ importRelations ::
   Connection ->
   CozoRelationExportPayload ->
   IO (Either CozoException ())
-importRelations c (CozoRelationExportPayload km) = do
-  r <- importRelations' c (strictToEncoding km)
-  pure
-    $ first CozoErrorNullPtr r
-    >>= cozoDecode @(IntermediateCozoMessageOnNotOK ConstJSON)
-    >>= bimap cozoMessageToException (const ())
-    . runIntermediateCozoMessageOnNotOK
+importRelations c (CozoRelationExportPayload km) =
+  decodeCozoCharPtrFn
+    <$> importRelations' c (strictToEncoding km)
 
 {- |
 Export the relations specified by the given names.
@@ -406,16 +402,11 @@ Import the relations corresponding to the given names
 from the specified path.
 -}
 importFromBackup :: Connection -> Text -> [Text] -> IO (Either CozoException ())
-importFromBackup c path relations = do
-  r <-
-    importFromBackup'
+importFromBackup c path relations =
+  decodeCozoCharPtrFn
+    <$> importFromBackup'
       c
       (strictToEncoding $ IntermediateCozoImportFromRelationInput path relations)
-  pure
-    $ first CozoErrorNullPtr r
-    >>= cozoDecode @(IntermediateCozoMessageOnNotOK ConstJSON)
-    >>= bimap cozoMessageToException (const ())
-    . runIntermediateCozoMessageOnNotOK
 
 decodeCozoCharPtrFn ::
   Either CozoNullResultPtrException ByteString ->
