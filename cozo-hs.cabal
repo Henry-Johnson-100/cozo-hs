@@ -20,7 +20,6 @@ library
     import:           warnings
     exposed-modules:
         Database.Cozo
-        Database.Cozo.FromRelation
     other-modules:
         Database.Cozo.Internal
         Database.Cozo.Internal.Bindings
