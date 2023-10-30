@@ -99,8 +99,30 @@ data CozoRelationExport a = CozoRelationExport
   deriving (Show, Eq, Generic, Functor, Foldable, Traversable)
 
 instance FromJSON (CozoRelationExport [Value]) where
+  parseJSON :: Value -> Parser (CozoRelationExport [Value])
   parseJSON =
     genericParseJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 18 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+
+instance ToJSON (CozoRelationExport [Value]) where
+  toJSON =
+    genericToJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 18 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+
+  toEncoding =
+    genericToEncoding
       ( defaultOptions
           { fieldLabelModifier = \s ->
               case drop 18 s of
@@ -293,6 +315,18 @@ restore :: Connection -> Text -> IO (Either CozoException ())
 restore c path =
   decodeCozoCharPtrFn
     <$> restore' c (encodeUtf8 path)
+
+importRelations ::
+  Connection ->
+  CozoRelationExportPayload ->
+  IO (Either CozoException ())
+importRelations c (CozoRelationExportPayload km) = do
+  r <- importRelations' c (strictToEncoding km)
+  pure
+    $ first CozoErrorNullPtr r
+    >>= cozoDecode @(IntermediateCozoMessageOnNotOK ConstJSON)
+    >>= bimap cozoMessageToException (const ())
+    . runIntermediateCozoMessageOnNotOK
 
 exportRelations ::
   Connection ->
