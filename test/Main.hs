@@ -53,6 +53,7 @@ exportAndImportTests =
           $ o
     ]
 
+testWithConnection :: (Connection -> IO c) -> IO c
 testWithConnection =
   bracket
     (open "mem" "" "{}" >>= either throwIO pure)
