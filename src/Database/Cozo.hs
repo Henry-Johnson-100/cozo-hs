@@ -19,6 +19,7 @@ module Database.Cozo (
   runQuery,
   backup,
   restore,
+  importRelations,
   exportRelations,
 
   -- * re-export
