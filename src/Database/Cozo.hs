@@ -212,7 +212,7 @@ instance ToJSON IntermediateCozoImportFromRelationInput where
 
 {- |
 An intermediate type for packing a list of named relations into an object with the form
-{"relations": [...]}
+\"{'relations': [...]}\"
 -}
 newtype IntermediateCozoRelationInput = IntermediateCozoRelationInput
   { intermediateCozoRelationInputRelations :: [Text]
@@ -299,9 +299,9 @@ instance FromJSON CozoResult where
 {- |
 Open a connection to a cozo database
 
-- engine: "mem", "sqlite" or "rocksdb"
+- engine: \"mem\", \"sqlite\" or \"rocksdb\"
 - path: utf8 encoded filepath
-- options: engine-specific options. "{}" is an acceptable empty value.
+- options: engine-specific options. \"{}\" is an acceptable empty value.
 -}
 open :: Text -> Text -> Text -> IO (Either CozoException Connection)
 open engine path options =
@@ -322,7 +322,7 @@ close = close'
 Run a utf8 encoded query with a map of parameters.
 
 Parameters are declared with
-text names and can be any valid JSON type. They are referenced in a query by a '$'
+text names and can be any valid JSON type. They are referenced in a query by a \"$\"
 preceding their name.
 -}
 runQuery ::
@@ -422,7 +422,7 @@ cozoDecode = first CozoJSONParseException . eitherDecodeStrict
 
 {- |
 Helper for defining JSON disjunctions that
-switch on the value of an 'ok' boolean field.
+switch on the value of an \"ok\" boolean field.
 -}
 eitherOkay ::
   String ->

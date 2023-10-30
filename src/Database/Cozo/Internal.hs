@@ -63,16 +63,16 @@ instance Exception CozoNullResultPtrException
 {- |
 Open a connection to a cozo database
 
-- engine: "mem", "sqlite" or "rocksdb"
+- engine: \"mem\", \"sqlite\" or \"rocksdb\"
 - path: utf8 encoded filepath
-- options: engine-specific options. "{}" is an acceptable empty value.
+- options: engine-specific options. \"{}\" is an acceptable empty value.
 -}
 open' ::
-  -- | engine: 'mem', 'sqlite' or 'rocksdb'
+  -- | engine: \"mem\", \"sqlite\" or \"rocksdb\"
   ByteString ->
   -- | path: utf8 encoded filepath
   ByteString ->
-  -- | options: engine-specific options. "{}" is an acceptable emtpy value.
+  -- | options: engine-specific options. \"{}\" is an acceptable emtpy value.
   ByteString ->
   IO (Either InternalCozoError Connection)
 open' engineBs pathBs optionBs =
