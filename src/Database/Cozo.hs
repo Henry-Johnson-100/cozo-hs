@@ -21,6 +21,7 @@ module Database.Cozo (
   restore,
   importRelations,
   exportRelations,
+  importFromBackup,
 
   -- * re-export
   CozoNullResultPtrException,
@@ -112,6 +113,7 @@ instance FromJSON (CozoRelationExport [Value]) where
       )
 
 instance ToJSON (CozoRelationExport [Value]) where
+  toJSON :: CozoRelationExport [Value] -> Value
   toJSON =
     genericToJSON
       ( defaultOptions
@@ -122,6 +124,7 @@ instance ToJSON (CozoRelationExport [Value]) where
           }
       )
 
+  toEncoding :: CozoRelationExport [Value] -> Encoding
   toEncoding =
     genericToEncoding
       ( defaultOptions
@@ -165,6 +168,34 @@ instance (FromJSON a) => FromJSON (IntermediateCozoMessageOnNotOK a) where
       "IntermediateCozoRelationExport"
       (fmap (IntermediateCozoMessageOnNotOK . Left) . parseJSON)
       (fmap (IntermediateCozoMessageOnNotOK . Right) . parseJSON)
+
+data IntermediateCozoImportFromRelationInput = IntermediateCozoImportFromRelationInput
+  { intermediateCozoImportFromRelationInputPath :: Text
+  , intermediateCozoImportFromRelationInputRelations :: [Text]
+  }
+  deriving (Show, Eq, Generic)
+
+instance ToJSON IntermediateCozoImportFromRelationInput where
+  toJSON :: IntermediateCozoImportFromRelationInput -> Value
+  toJSON =
+    genericToJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 39 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+  toEncoding :: IntermediateCozoImportFromRelationInput -> Encoding
+  toEncoding =
+    genericToEncoding
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 39 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
 
 {- |
 An intermediate type for packing a list of named relations into an object with the form
@@ -346,6 +377,18 @@ exportRelations c bs = do
     >>= first CozoJSONParseException
     . eitherDecodeStrict @(IntermediateCozoMessageOnNotOK CozoRelationExportPayload)
     >>= first cozoMessageToException
+    . runIntermediateCozoMessageOnNotOK
+
+importFromBackup :: Connection -> Text -> [Text] -> IO (Either CozoException ())
+importFromBackup c path relations = do
+  r <-
+    importFromBackup'
+      c
+      (strictToEncoding $ IntermediateCozoImportFromRelationInput path relations)
+  pure
+    $ first CozoErrorNullPtr r
+    >>= cozoDecode @(IntermediateCozoMessageOnNotOK ConstJSON)
+    >>= bimap cozoMessageToException (const ())
     . runIntermediateCozoMessageOnNotOK
 
 decodeCozoCharPtrFn ::
