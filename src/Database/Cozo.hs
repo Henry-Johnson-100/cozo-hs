@@ -25,6 +25,16 @@ module Database.Cozo (
   exportRelations,
   importFromBackup,
 
+  -- ** Internal Functions
+  open',
+  close',
+  runQuery',
+  backup',
+  restore',
+  importRelations',
+  exportRelations',
+  importFromBackup',
+
   -- * re-export
   CozoNullResultPtrException,
   Database.Cozo.Internal.InternalCozoError,
@@ -351,6 +361,12 @@ restore c path =
   decodeCozoCharPtrFn
     <$> restore' c (encodeUtf8 path)
 
+{- |
+Import data in relations.
+
+Triggers are not run for relations, if you wish to activate triggers, use a query
+  with parameters.
+-}
 importRelations ::
   Connection ->
   CozoRelationExportPayload ->
@@ -363,6 +379,9 @@ importRelations c (CozoRelationExportPayload km) = do
     >>= bimap cozoMessageToException (const ())
     . runIntermediateCozoMessageOnNotOK
 
+{- |
+Export the relations specified by the given names.
+-}
 exportRelations ::
   Connection ->
   [Text] ->
@@ -382,6 +401,10 @@ exportRelations c bs = do
     >>= first cozoMessageToException
     . runIntermediateCozoMessageOnNotOK
 
+{- |
+Import the relations corresponding to the given names
+from the specified path.
+-}
 importFromBackup :: Connection -> Text -> [Text] -> IO (Either CozoException ())
 importFromBackup c path relations = do
   r <-
