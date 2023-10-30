@@ -33,6 +33,7 @@ module Database.Cozo (
   KM.empty,
   KM.singleton,
   KM.insert,
+  KM.fromList,
   Value (..),
 ) where
 
