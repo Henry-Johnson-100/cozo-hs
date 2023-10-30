@@ -178,9 +178,7 @@ runQuery c query params = do
           . toEncoding
           $ params
       )
-  pure $ do
-    r' <- first CozoErrorNullPtr r
-    cozoDecode r'
+  pure $ first CozoErrorNullPtr r >>= cozoDecode
 
 {- |
 Backup a database.
