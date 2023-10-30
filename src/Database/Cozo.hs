@@ -1,7 +1,6 @@
 {-# HLINT ignore "Use const" #-}
 {-# HLINT ignore "Eta reduce" #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE StrictData #-}
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
