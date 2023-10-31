@@ -13,7 +13,7 @@ maintainer:         monawasensei@gmail.com
 category:           Database
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md
-extra-source-files: headers/cozo_c.h
+                    README.md
 
 common warnings
     ghc-options: -Wall
