@@ -1,6 +1,7 @@
 {-# LANGUAGE StrictData #-}
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_HADDOCK hide #-}
 
 {-# HLINT ignore "Use newtype instead of data" #-}
 

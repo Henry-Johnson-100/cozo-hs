@@ -5,6 +5,14 @@
 {-# OPTIONS_GHC -Wno-typed-holes #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
+{- |
+Module      : Database.Cozo
+Description : Wrappers and types for the Cozo C API
+License     : MPL-2.0
+Maintainer  : hencutJohnson@gmail.com
+
+Included are some wrapping functions for Cozo's C API and data types to deserialize them.
+-}
 module Database.Cozo (
   -- * Data
   CozoResult (..),
@@ -14,7 +22,7 @@ module Database.Cozo (
   CozoRelationExport (..),
   CozoException (..),
 
-  -- * Function
+  -- * Functions
   open,
   close,
   runQuery,
@@ -24,7 +32,7 @@ module Database.Cozo (
   exportRelations,
   importFromBackup,
 
-  -- ** Internal Functions
+  -- ** Lower Level Wrappers
   open',
   close',
   runQuery',
@@ -34,7 +42,7 @@ module Database.Cozo (
   exportRelations',
   importFromBackup',
 
-  -- * re-export
+  -- * Re-exports
   Connection,
   CozoNullResultPtrException,
   Database.Cozo.Internal.InternalCozoError,
@@ -79,11 +87,24 @@ instance FromJSON ConstJSON where
   parseJSON :: Value -> Parser ConstJSON
   parseJSON _ = pure ConstJSON
 
+{- |
+A failure that cannot be recovered from easily.
+-}
 data CozoException
-  = CozoExceptionInternal InternalCozoError
-  | CozoErrorNullPtr CozoNullResultPtrException
-  | CozoJSONParseException String
-  | CozoOperationFailed Text
+  = -- | An internal error may occur when a connection is first being established
+    -- but not after that.
+    CozoExceptionInternal InternalCozoError
+  | -- | If any operation in the underlying C API returns a null pointer instead
+    -- of a pointer to a valid string, this error will be returned.
+    CozoErrorNullPtr CozoNullResultPtrException
+  | -- | The result of any operation fails to be deserialized appropriately.
+    -- This is a problem with the wrapper for the API and should be
+    -- submitted as an issue if it ever arises.
+    CozoJSONParseException String
+  | -- | A non-query operation such as a backup or import failed.
+    -- These usually occur because the user is trying to import or export a
+    -- relation that does not exist in the target database.
+    CozoOperationFailed Text
   deriving (Show, Eq, Generic)
 
 instance Exception CozoException
@@ -106,9 +127,12 @@ instance FromJSON CozoMessage where
 cozoMessageToException :: CozoMessage -> CozoException
 cozoMessageToException (CozoMessage m) = CozoOperationFailed m
 
+{- |
+The rows of some relation with its headers.
+-}
 data CozoRelationExport = CozoRelationExport
   { cozoRelationExportHeaders :: [Text]
-  , cozoRelationExportNext :: Maybe Value
+  , cozoRelationExportNext :: Value
   , cozoRelationExportRows :: [[Value]]
   }
   deriving (Show, Eq, Generic)
@@ -148,6 +172,11 @@ instance ToJSON CozoRelationExport where
           }
       )
 
+{- |
+A map of names and the relations they contain.
+This type is intended to be used as input to an import function
+or otherwise stored as JSON.
+-}
 newtype CozoRelationExportPayload = CozoRelationExportPayload
   { cozoRelationExportPayloadData :: KeyMap CozoRelationExport
   }
@@ -243,9 +272,14 @@ instance ToJSON IntermediateCozoRelationInput where
           }
       )
 
+{- |
+An okay result from a query.
+
+Contains result headers, and rows among other things.
+-}
 data CozoOkay = CozoOkay
   { cozoOkayHeaders :: [Text]
-  , cozoOkayNext :: Maybe Value
+  , cozoOkayNext :: Value
   , cozoOkayRows :: [[Value]]
   , cozoOkayTook :: Double
   }
@@ -263,6 +297,11 @@ instance FromJSON CozoOkay where
           }
       )
 
+{- |
+A bad result from a query.
+
+Contains information on what went wrong.
+-}
 data CozoBad = CozoBad
   { cozoBadCauses :: [Value]
   , cozoBadCode :: Text

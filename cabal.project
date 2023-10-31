@@ -1,2 +1,4 @@
 packages: ./
 optimization: 0
+haddock-hyperlink-source: True
+haddock-html-location: http://hackage.haskell.org/packages/archive/$pkg/latest/doc/html

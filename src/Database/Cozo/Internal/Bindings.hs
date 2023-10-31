@@ -1,5 +1,6 @@
 {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# OPTIONS_HADDOCK hide #-}
 
 module Database.Cozo.Internal.Bindings (
   cozoOpenDB,
