@@ -17,9 +17,9 @@ module Database.Cozo (
   -- * Data
   CozoResult (..),
   CozoOkay (..),
+  NamedRows (..),
   CozoBad (..),
   CozoRelationExportPayload (..),
-  CozoRelationExport (..),
   CozoException (..),
 
   -- * Functions
@@ -68,6 +68,7 @@ import Data.Aeson (
   genericToEncoding,
   genericToJSON,
   withObject,
+  (.:),
  )
 import Data.Aeson.KeyMap (Key, KeyMap)
 import Data.Aeson.KeyMap qualified as KM
@@ -78,8 +79,65 @@ import Data.ByteString.Builder (toLazyByteString)
 import Data.Char (toLower)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
-import Database.Cozo.Internal
+import Database.Cozo.Internal (
+  Connection,
+  CozoNullResultPtrException,
+  InternalCozoError,
+  backup',
+  close',
+  exportRelations',
+  importFromBackup',
+  importRelations',
+  open',
+  restore',
+  runQuery',
+ )
 import GHC.Generics (Generic)
+
+{- |
+Relation information with headers, their values, and another `NamedRows` if
+it exists.
+-}
+data NamedRows = NamedRows
+  { namedRowsHeaders :: [Text]
+  , namedRowsRows :: [[Value]]
+  , namedRowsNext :: Maybe NamedRows
+  }
+  deriving (Show, Eq, Generic)
+
+instance FromJSON NamedRows where
+  parseJSON :: Value -> Parser NamedRows
+  parseJSON =
+    genericParseJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 9 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+
+instance ToJSON NamedRows where
+  toJSON :: NamedRows -> Value
+  toJSON =
+    genericToJSON
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 9 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
+  toEncoding :: NamedRows -> Encoding
+  toEncoding =
+    genericToEncoding
+      ( defaultOptions
+          { fieldLabelModifier = \s ->
+              case drop 9 s of
+                [] -> []
+                x : xs -> toLower x : xs
+          }
+      )
 
 data ConstJSON = ConstJSON deriving (Show, Eq, Generic)
 
@@ -128,57 +186,12 @@ cozoMessageToException :: CozoMessage -> CozoException
 cozoMessageToException (CozoMessage m) = CozoOperationFailed m
 
 {- |
-The rows of some relation with its headers.
--}
-data CozoRelationExport = CozoRelationExport
-  { cozoRelationExportHeaders :: [Text]
-  , cozoRelationExportNext :: Value
-  , cozoRelationExportRows :: [[Value]]
-  }
-  deriving (Show, Eq, Generic)
-
-instance FromJSON CozoRelationExport where
-  parseJSON :: Value -> Parser CozoRelationExport
-  parseJSON =
-    genericParseJSON
-      ( defaultOptions
-          { fieldLabelModifier = \s ->
-              case drop 18 s of
-                [] -> []
-                x : xs -> toLower x : xs
-          }
-      )
-
-instance ToJSON CozoRelationExport where
-  toJSON :: CozoRelationExport -> Value
-  toJSON =
-    genericToJSON
-      ( defaultOptions
-          { fieldLabelModifier = \s ->
-              case drop 18 s of
-                [] -> []
-                x : xs -> toLower x : xs
-          }
-      )
-
-  toEncoding :: CozoRelationExport -> Encoding
-  toEncoding =
-    genericToEncoding
-      ( defaultOptions
-          { fieldLabelModifier = \s ->
-              case drop 18 s of
-                [] -> []
-                x : xs -> toLower x : xs
-          }
-      )
-
-{- |
 A map of names and the relations they contain.
 This type is intended to be used as input to an import function
 or otherwise stored as JSON.
 -}
 newtype CozoRelationExportPayload = CozoRelationExportPayload
-  { cozoRelationExportPayloadData :: KeyMap CozoRelationExport
+  { cozoRelationExportPayloadData :: KeyMap NamedRows
   }
   deriving (Show, Eq, Generic)
 
@@ -278,9 +291,7 @@ An okay result from a query.
 Contains result headers, and rows among other things.
 -}
 data CozoOkay = CozoOkay
-  { cozoOkayHeaders :: [Text]
-  , cozoOkayNext :: Value
-  , cozoOkayRows :: [[Value]]
+  { cozoOkayNamedRows :: NamedRows
   , cozoOkayTook :: Double
   }
   deriving (Show, Eq, Generic)
@@ -288,14 +299,11 @@ data CozoOkay = CozoOkay
 instance FromJSON CozoOkay where
   parseJSON :: Value -> Parser CozoOkay
   parseJSON =
-    genericParseJSON
-      ( defaultOptions
-          { fieldLabelModifier = \s ->
-              case drop 8 s of
-                [] -> []
-                x : xs -> toLower x : xs
-          }
-      )
+    withObject "CozoOkay" $ \o ->
+      CozoOkay
+        <$> parseJSON (Object o)
+        <*> o
+        .: "took"
 
 {- |
 A bad result from a query.
@@ -303,12 +311,9 @@ A bad result from a query.
 Contains information on what went wrong.
 -}
 data CozoBad = CozoBad
-  { cozoBadCauses :: [Value]
-  , cozoBadCode :: Text
-  , cozoBadDisplay :: Text
+  { cozoBadDisplay :: Maybe Text
   , cozoBadMessage :: Text
-  , cozoBadRelated :: [Value]
-  , cozoBadSeverity :: Text
+  , cozoBadSeverity :: Maybe Text
   }
   deriving (Show, Eq, Generic)
 
