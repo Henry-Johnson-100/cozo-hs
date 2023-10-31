@@ -7,8 +7,8 @@ description:        Simple, relatively low-level bindings to the C API
                     serializing function arguments and deserializing query results.
 license:            MPL-2.0
 license-file:       LICENSE
-author:             Monawa Sensei
-maintainer:         monawasensei@gmail.com
+author:             Henry Johnson
+maintainer:         hencutJohnson@gmail.com
 -- copyright:
 category:           Database
 build-type:         Simple
