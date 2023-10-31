@@ -307,7 +307,7 @@ data CozoBad = CozoBad
   , cozoBadCode :: Text
   , cozoBadDisplay :: Text
   , cozoBadMessage :: Text
-  , cozoBadRelated :: Value
+  , cozoBadRelated :: [Value]
   , cozoBadSeverity :: Text
   }
   deriving (Show, Eq, Generic)
