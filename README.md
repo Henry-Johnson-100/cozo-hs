@@ -43,7 +43,7 @@ main :: IO ()
 main = 
   bracket 
     (open "mem" "" "{}" >>= either throwIO pure)
-    ((() <$) . close)
+    (fmap (const ()) . close)
     $ \c -> do
       er <- runQuery c "?[] <- [[1,2,3]]" KM.empty
       case er of
@@ -51,7 +51,7 @@ main =
         Right (CozoResult badOkay) -> 
           case badOkay of
             Left bad -> print . cozoBadMessage $ bad
-            Right okay -> print . cozoOkayRows $ okay
+            Right okay -> print . namedRowsRows . cozoOkayNamedRows $ okay
 ```
 
 This program will output:
